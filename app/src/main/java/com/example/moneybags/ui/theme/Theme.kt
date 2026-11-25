@@ -1,58 +1,69 @@
 package com.example.moneybags.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = PaleGreen,
+    onPrimary = DeepBlue,
+    secondary = SoftNeutral,
+    onSecondary = DeepBlue,
+    tertiary = FreshGreen,
+    onTertiary = DeepBlue,
+    background = DeepBlue,
+    onBackground = SoftNeutral,
+    surface = DeepBlue,
+    onSurface = SoftNeutral,
+    surfaceVariant = Teal,
+    onSurfaceVariant = SoftNeutral,
+    surfaceContainer = DeepBlue,
+    surfaceContainerHigh = DeepBlue,
+    surfaceContainerHighest = DeepBlue,
+    secondaryContainer = FreshGreen,
+    onSecondaryContainer = DeepBlue
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    primary = DeepBlue,
+    onPrimary = SoftNeutral,
+    secondary = Teal,
+    onSecondary = SoftNeutral,
+    tertiary = DeepBlue,
+    onTertiary = SoftNeutral,
+    background = SoftNeutral,
+    onBackground = DeepBlue,
+    surface = SoftNeutral,
+    onSurface = DeepBlue,
+    surfaceVariant = Teal,
+    onSurfaceVariant = SoftNeutral,
+    surfaceContainer = Teal,
+    secondaryContainer = FreshGreen,
+    onSecondaryContainer = DeepBlue,
+    tertiaryContainer = PaleGreen,
+    onTertiaryContainer = DeepBlue
 )
 
 @Composable
 fun MoneyBagsTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = false,
+    textScale: Float = 1f,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val systemDensity = LocalDensity.current
 
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    CompositionLocalProvider(
+        LocalDensity provides Density(systemDensity.density, systemDensity.fontScale * textScale)
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
     }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
 }
