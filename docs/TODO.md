@@ -19,6 +19,15 @@
 - Idnetify a useful remote-image feature before adding Coil
 - Consider dependency injection if the apps dependencies become dificult to manage
 
+## Found Errors that need resolved
+- [X] When tapping on the amount input box, I have to manually delete whats there, when tapping it should highlight it and then allow me to start typing over it
+- [X] place holder for Money Bag Name: should be greyyed out and say "ex: electric bill, new car, weekend getaway..."
+- [ ] change -$ to "track spending", decrease the size of +$ -- possible change that to 
+      add income, the button for -$ doesnt need to be that large. EDIT: i dont line "Add income"
+- [ ] remove "long press empty space..." text
+
 ## Possible Future Implemntations
 - Maintain a record of spending for each category
+- maybe implement a quick over view of the how to? kinda like a tutorial 
+
 

@@ -175,8 +175,8 @@ private fun SettingsScreen(
                         modifier = Modifier.padding(top = 12.dp),
                         style = MaterialTheme.typography.titleMedium
                     )
-                    Text("• ${stringResource(R.string.help_add_money, selectedCurrency.symbol)}")
-                    Text("• ${stringResource(R.string.help_subtract_money, selectedCurrency.symbol)}")
+                    Text("• ${stringResource(R.string.help_add_money)}")
+                    Text("• ${stringResource(R.string.help_subtract_money)}")
                 }
             },
             confirmButton = {

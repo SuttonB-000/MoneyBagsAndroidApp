@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val moneyBagsVersion = "0.1.0"
+val moneyBagsVersion = "0.1.1"
 
 android {
     namespace = "com.example.moneybags"

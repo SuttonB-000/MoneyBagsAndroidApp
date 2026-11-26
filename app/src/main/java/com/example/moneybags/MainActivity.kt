@@ -17,15 +17,23 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import java.math.BigDecimal
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -89,23 +97,48 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
     val savings = stringResource(R.string.example_savings)
     var bagNames by rememberSaveable { mutableStateOf(arrayListOf(groceries, savings)) }
     var bagAmounts by rememberSaveable { mutableStateOf(arrayListOf("0.00", "0.00")) }
+    var unallocatedAmount by rememberSaveable { mutableStateOf("0.00") }
     var editingBagIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var showNewBag by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
-    var newAmount by rememberSaveable { mutableStateOf("") }
+    var newAmount by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue())
+    }
+    var amountFocusRequests by remember { mutableIntStateOf(0) }
     var transactionBagIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var waitingForBag by rememberSaveable { mutableStateOf(false) }
     var showMoneyAction by rememberSaveable { mutableStateOf(false) }
     var subtractingMoney by rememberSaveable { mutableStateOf(false) }
     var transactionAmount by rememberSaveable { mutableStateOf("") }
-    val parsedAmount = newAmount.toBigDecimalOrNull()
+    val parsedAmount = newAmount.text.toBigDecimalOrNull()
+    val exceedsAvailableFunds = editingBagIndex?.let { index ->
+        parsedAmount != null &&
+            parsedAmount > bagAmounts[index].toBigDecimal() + unallocatedAmount.toBigDecimal()
+    } ?: false
     val validAmount = parsedAmount != null && parsedAmount.signum() >= 0 &&
-        parsedAmount.scale() <= 2 && parsedAmount <= BigDecimal("999999999.99")
+        parsedAmount.scale() <= 2 && parsedAmount <= BigDecimal("999999999.99") &&
+        !exceedsAvailableFunds
+    val projectedUnallocated = editingBagIndex?.let { index ->
+        parsedAmount?.takeIf {
+            it.signum() >= 0 && it.scale() <= 2 && it <= BigDecimal("999999999.99")
+        }?.let { amount ->
+            unallocatedAmount.toBigDecimal() + bagAmounts[index].toBigDecimal() - amount
+        }
+    }
     val currency = selectedCurrency.formatter()
     val currencySymbol = selectedCurrency.symbol
     val bagGridState = rememberLazyGridState()
     val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(amountFocusRequests) {
+        if (amountFocusRequests > 0) {
+            // Let the tap place the cursor before selecting the full amount.
+            withFrameNanos { }
+            if (showNewBag && editingBagIndex != null) {
+                newAmount = newAmount.copy(selection = TextRange(0, newAmount.text.length))
+            }
+        }
+    }
 
     if (showNewBag && !confirmDelete) {
         AlertDialog(
@@ -125,39 +158,58 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                         placeholder = {
                             Text(
                                 stringResource(R.string.bag_name_placeholder),
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                         },
                         singleLine = true
                     )
-                    Text(
-                        text = stringResource(if (editingBagIndex == null) R.string.starting_amount else R.string.bag_amount),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    OutlinedTextField(
-                        value = newAmount,
-                        onValueChange = { newAmount = it },
-                        placeholder = {
-                            Text(
-                                stringResource(R.string.balance_placeholder, currencySymbol),
-                                color = MaterialTheme.colorScheme.onSurface
+                    if (editingBagIndex != null) {
+                        Text(
+                            text = stringResource(R.string.bag_amount),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            OutlinedTextField(
+                                value = newAmount,
+                                onValueChange = { newAmount = it },
+                                modifier = Modifier.onFocusChanged { focusState ->
+                                    if (focusState.isFocused) {
+                                        amountFocusRequests++
+                                    }
+                                },
+                                placeholder = {
+                                    Text(
+                                        stringResource(R.string.balance_placeholder, currencySymbol),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                singleLine = true,
+                                isError = newAmount.text.isNotEmpty() && !validAmount
                             )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true,
-                        isError = newAmount.isNotEmpty() && !validAmount,
-                        supportingText = {
                             Text(
-                                stringResource(R.string.amount_hint),
+                                text = stringResource(
+                                    R.string.money_left_to_budget,
+                                    currency.format(projectedUnallocated ?: unallocatedAmount.toBigDecimal())
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                text = stringResource(
+                                    if (exceedsAvailableFunds) R.string.insufficient_unallocated
+                                    else R.string.amount_hint
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                    )
+                    }
                 }
             },
             confirmButton = {
                 Button(
-                    enabled = newName.isNotBlank() && validAmount,
+                    enabled = newName.isNotBlank() && (editingBagIndex == null || validAmount),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -165,19 +217,23 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                         disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     ),
                     onClick = {
-                        if (newName.isNotBlank() && validAmount && parsedAmount != null) {
-                            val editIndex = editingBagIndex
-                            val amount = parsedAmount.setScale(2).toPlainString()
+                        val editIndex = editingBagIndex
+                        val amount = if (editIndex == null) "0.00" else parsedAmount?.setScale(2)?.toPlainString()
+                        if (newName.isNotBlank() && amount != null && (editIndex == null || validAmount)) {
                             if (editIndex == null) {
                                 bagNames = ArrayList(bagNames + newName.trim())
                                 bagAmounts = ArrayList(bagAmounts + amount)
                             } else {
+                                unallocatedAmount = (
+                                    unallocatedAmount.toBigDecimal() +
+                                        bagAmounts[editIndex].toBigDecimal() - amount.toBigDecimal()
+                                ).setScale(2).toPlainString()
                                 bagNames = ArrayList(bagNames).apply { set(editIndex, newName.trim()) }
                                 bagAmounts = ArrayList(bagAmounts).apply { set(editIndex, amount) }
                             }
                             val newBagIndex = bagNames.lastIndex
                             newName = ""
-                            newAmount = ""
+                            newAmount = TextFieldValue()
                             showNewBag = false
                             editingBagIndex = null
                             if (editIndex == null) {
@@ -218,6 +274,9 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                         contentColor = MaterialTheme.colorScheme.onError
                     ),
                     onClick = {
+                        unallocatedAmount = (
+                            unallocatedAmount.toBigDecimal() + bagAmounts[index].toBigDecimal()
+                        ).setScale(2).toPlainString()
                         bagNames = ArrayList(bagNames).apply { removeAt(index) }
                         bagAmounts = ArrayList(bagAmounts).apply { removeAt(index) }
                         transactionBagIndex = when {
@@ -238,17 +297,24 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
             }
         )
     }
-    if (showMoneyAction && transactionBagIndex != null) {
-        val index = transactionBagIndex!!
+    if (showMoneyAction && (!subtractingMoney || transactionBagIndex != null)) {
+        val index = transactionBagIndex
         val amountToMove = transactionAmount.toBigDecimalOrNull()
-        val currentAmount = bagAmounts[index].toBigDecimal()
+        val currentAmount = if (subtractingMoney) {
+            bagAmounts[requireNotNull(index)].toBigDecimal()
+        } else {
+            unallocatedAmount.toBigDecimal()
+        }
         val maxAmount = BigDecimal("999999999.99")
         val amountIsValid = amountToMove != null &&
             amountToMove.signum() > 0 &&
             amountToMove.scale() <= 2 &&
             amountToMove <= maxAmount &&
-            (subtractingMoney || currentAmount + amountToMove <= maxAmount) &&
-            (!subtractingMoney || amountToMove <= currentAmount)
+            (if (subtractingMoney) {
+                amountToMove <= currentAmount
+            } else {
+                currentAmount + amountToMove <= maxAmount
+            })
 
         AlertDialog(
             onDismissRequest = {
@@ -258,11 +324,11 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
             },
             title = {
                 Text(
-                    stringResource(
-                        if (subtractingMoney) R.string.subtract_from_bag_title
-                        else R.string.add_to_bag_title,
-                        bagNames[index]
-                    )
+                    if (subtractingMoney) {
+                        stringResource(R.string.subtract_from_bag_title, bagNames[requireNotNull(index)])
+                    } else {
+                        stringResource(R.string.add_to_unallocated_title)
+                    }
                 )
             },
             text = {
@@ -294,13 +360,12 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                     enabled = amountIsValid,
                     onClick = {
                         if (amountIsValid && amountToMove != null) {
-                            val updatedAmount = if (subtractingMoney) {
-                                currentAmount - amountToMove
+                            if (subtractingMoney) {
+                                bagAmounts = ArrayList(bagAmounts).apply {
+                                    set(requireNotNull(index), (currentAmount - amountToMove).setScale(2).toPlainString())
+                                }
                             } else {
-                                currentAmount + amountToMove
-                            }
-                            bagAmounts = ArrayList(bagAmounts).apply {
-                                set(index, updatedAmount.setScale(2).toPlainString())
+                                unallocatedAmount = (currentAmount + amountToMove).setScale(2).toPlainString()
                             }
                             showMoneyAction = false
                             transactionBagIndex = null
@@ -370,23 +435,24 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                 contentColor = SoftNeutral
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     Button(
                         onClick = {
                             subtractingMoney = false
                             transactionAmount = ""
                             transactionBagIndex = null
-                            waitingForBag = true
+                            waitingForBag = false
+                            showMoneyAction = true
                         },
-                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     ) {
-                        Text(stringResource(R.string.add_symbol, currencySymbol))
+                        Text(stringResource(R.string.add_income))
                     }
                     Button(
                         onClick = {
@@ -395,13 +461,13 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                             transactionBagIndex = null
                             waitingForBag = true
                         },
-                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     ) {
-                        Text(stringResource(R.string.subtract_symbol, currencySymbol))
+                        Text(stringResource(R.string.track_spending))
                     }
                 }
             }
@@ -419,18 +485,20 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(
-                    text = currency.format(bagAmounts.fold(BigDecimal.ZERO) { total, amount ->
+                    text = currency.format(bagAmounts.fold(unallocatedAmount.toBigDecimal()) { total, amount ->
                         total + amount.toBigDecimal()
                     }),
                     style = MaterialTheme.typography.headlineLarge,
                     color = MaterialTheme.colorScheme.tertiary
                 )
+                Text(
+                    text = stringResource(
+                        R.string.unallocated_balance,
+                        currency.format(unallocatedAmount.toBigDecimal())
+                    ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
-            Text(
-                text = stringResource(R.string.new_bag_hint),
-                modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
-                style = MaterialTheme.typography.bodySmall
-            )
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 state = bagGridState,
@@ -440,7 +508,7 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                         editingBagIndex = null
                         confirmDelete = false
                         newName = ""
-                        newAmount = ""
+                        newAmount = TextFieldValue()
                         showNewBag = true
                     })
                 },
@@ -463,7 +531,7 @@ fun HomeScreen(modifier: Modifier = Modifier, selectedCurrency: AppCurrency = Ap
                                 waitingForBag = false
                                 editingBagIndex = index
                                 newName = bagNames[index]
-                                newAmount = bagAmounts[index]
+                                newAmount = TextFieldValue(bagAmounts[index])
                                 confirmDelete = false
                                 showNewBag = true
                             })
